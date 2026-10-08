@@ -115,7 +115,7 @@ export function PlanView(props: PlanViewProps) {
         <g key={`w-${r.id}`} opacity={focusRoomId && focusRoomId !== r.id ? 0.35 : 1}>
           <path d={`${toPath(outset(r.polygon, wallThickness))}${toPath(r.polygon)}`} fillRule="evenodd" fill={C.wall} />
           {r.openings.map((o) => (
-            <OpeningShape key={o.id} room={r} o={o} t={wallThickness} highlight={o.id === highlightOpeningId} />
+            <OpeningShape key={o.id} room={r} o={o} t={wallThickness} highlight={false} />
           ))}
           {r.polygon.map((_, i) => {
             const status = r.wallStatus?.[i] ?? 'measured'
@@ -124,6 +124,12 @@ export function PlanView(props: PlanViewProps) {
           })}
         </g>
       ))}
+
+      {/* Hervorgehobene Öffnung über allem, auch wenn ihr Raum abgeblendet ist */}
+      {highlightOpeningId &&
+        rooms.flatMap((r) =>
+          r.openings.filter((o) => o.id === highlightOpeningId).map((o) => <OpeningShape key={`hl-${o.id}`} room={r} o={o} t={wallThickness} highlight />),
+        )}
 
       {rooms
         .filter((r) => showDims(r.id))
