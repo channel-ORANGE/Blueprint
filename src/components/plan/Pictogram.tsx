@@ -37,7 +37,7 @@ export type PictogramProps =
 /**
  * Mini-Plan als Piktogramm – gezeichnet mit derselben Komponente wie der Grundriss,
  * damit Auswahl und Ergebnis garantiert gleich aussehen.
- * Tür-Variante: Blick von innen auf die Türwand (unten), Raum liegt oberhalb.
+ * Tür-Variante: Blick aus dem Raum auf die Türwand (oben). Band am Wandanfang ('start') = links.
  */
 export function Pictogram(props: PictogramProps) {
   const room: Room =
@@ -47,7 +47,7 @@ export function Pictogram(props: PictogramProps) {
           id: 'p',
           name: '',
           polygon: shapes.rect,
-          openings: [{ id: 'd', kind: 'door', wall: 2, offset: 350, width: 700, hinge: props.hinge, swing: props.swing }],
+          openings: [{ id: 'd', kind: 'door', wall: 0, offset: 350, width: 700, hinge: props.hinge, swing: props.swing }],
         }
   return <PlanView rooms={[room]} wallThickness={110} padding={props.variant === 'door' ? 820 : 140} className={props.className} />
 }
