@@ -44,7 +44,7 @@
 /* Plan-Ergänzungen zum shadcn-Theme */
 :root {
   --plan-floor: var(--background);
-  --plan-wall: color-mix(in oklab, var(--foreground) 88%, transparent);
+  --plan-wall: color-mix(in oklab, var(--foreground) 88%, var(--background));
   --plan-furniture: color-mix(in oklab, var(--foreground) 5%, var(--background));
   --fit-ok: oklch(0.62 0.15 150);
   --fit-tight: oklch(0.75 0.16 75);

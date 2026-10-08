@@ -28,6 +28,13 @@ describe('collisions', () => {
     const ok: Box = { id: 'b', x: 4615, y: 0, w: 1000, h: 1000 }
     expect(collisions([living, ok], gap).size).toBe(0)
   })
+
+  it('L-Raum: Nachbar in der Aussparung ist kein Konflikt', () => {
+    const lTop: Box = { id: 'l', x: 0, y: 0, w: 5000, h: 2000 }
+    const lBottom: Box = { id: 'l', x: 0, y: 2000, w: 3000, h: 2000 }
+    const inNotch: Box = { id: 'n', x: 3115, y: 2115, w: 1800, h: 1800 }
+    expect(collisions([lTop, lBottom, inNotch], gap).size).toBe(0)
+  })
 })
 
 describe('pushNeighbors', () => {
@@ -46,6 +53,11 @@ describe('placeNew', () => {
   it('setzt den ersten Raum mittig, weitere rechts daneben', () => {
     expect(placeNew([], 3000, 2000)).toEqual({ x: -1500, y: -1000 })
     expect(placeNew([living], 3000, 2000)).toEqual({ x: 5500, y: 0 })
+  })
+
+  it('beginnt eine neue Reihe, wenn die Reihe zu breit wird', () => {
+    const row: Box[] = [living, { id: 'b', x: 5500, y: 0, w: 4000, h: 3000 }, { id: 'c', x: 10500, y: 0, w: 3000, h: 3000 }]
+    expect(placeNew(row, 3000, 3000)).toEqual({ x: 0, y: 6000 })
   })
 })
 

@@ -27,7 +27,10 @@ export type SketchCanvasProps = {
   onMove?: (id: string, x: number, y: number, tolMm: number) => void
   onTapRoom?: (id: string) => void
   onTapWall?: (index: number) => void
+  onTapOpening?: (id: string) => void
   onTapBackground?: () => void
+  /** Erhöhen = Ansicht neu auf alle Räume (bzw. den fokussierten Raum) ausrichten */
+  fitToken?: number
   className?: string
 }
 
@@ -37,7 +40,7 @@ const clampS = (s: number) => Math.min(MAX_S, Math.max(MIN_S, s))
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 
 export function SketchCanvas(props: SketchCanvasProps) {
-  const { rooms, focusId, activeWall, activeLabel, draftOpening, conflicts, bottomInset = 0, rightInset = 0, onMoveStart, onMove, onTapRoom, onTapWall, onTapBackground, className } = props
+  const { rooms, focusId, activeWall, activeLabel, draftOpening, conflicts, bottomInset = 0, rightInset = 0, onMoveStart, onMove, onTapRoom, onTapWall, onTapOpening, onTapBackground, fitToken = 0, className } = props
   const boxRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [cam, setCam] = useState<Camera>({ cx: 0, cy: 0, s: 0.06 })
@@ -79,11 +82,22 @@ export function SketchCanvas(props: SketchCanvasProps) {
         { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity },
       )
     : { x0: -3000, y0: -3000, x1: 3000, y1: 3000 }
-  const fitKey = `${focusId}|${rooms.length}|${activeWall}|${bottomInset}|${rightInset}|${size.w}x${size.h}`
+  // Im Raum: mitwachsen, während Maße eingetippt werden.
+  const focusSize = focusId ? `${Math.round(bb.x1 - bb.x0)}x${Math.round(bb.y1 - bb.y0)}` : ''
+  const [dragEnd, setDragEnd] = useState(0)
+  const fitKey = `${focusId}|${rooms.length}|${activeWall}|${bottomInset}|${rightInset}|${size.w}x${size.h}|${focusSize}|${fitToken}|${dragEnd}`
   const firstFit = useRef(true)
+  const afterDrag = useRef(false)
   useEffect(() => {
     if (!size.w || !size.h) return
     const pad = focusId ? 56 : 72
+    // Nach dem Ziehen nur nachführen, wenn ein Raum aus dem Bild ragt
+    if (afterDrag.current) {
+      afterDrag.current = false
+      const c = camRef.current
+      const inView = (x: number, y: number) => Math.abs((x - c.cx) * c.s) < size.w / 2 - 16 && Math.abs((y - c.cy) * c.s) < size.h / 2 - 16
+      if (inView(bb.x0, bb.y0) && inView(bb.x1, bb.y1)) return
+    }
     const t = WALL_THICKNESS
     const bw = bb.x1 - bb.x0 + 2 * t
     const bh = bb.y1 - bb.y0 + 2 * t
@@ -91,12 +105,23 @@ export function SketchCanvas(props: SketchCanvasProps) {
     const availW = Math.max(160, size.w - rightInset - 2 * pad)
     const s = clampS(Math.min(availW / bw, availH / bh, focusId ? MAX_S : 0.12))
     const next = { cx: (bb.x0 + bb.x1) / 2 + rightInset / 2 / s, cy: (bb.y0 + bb.y1) / 2 + bottomInset / 2 / s, s }
+    if (!focusId) minS.current = s * 0.35
     if (firstFit.current) {
       firstFit.current = false
       setCam(next)
     } else animateTo(next)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitKey])
+
+  // Nicht so weit herauszoomen, dass die Wohnung verschwindet
+  const minS = useRef(MIN_S)
+  const clampZoom = (v: number) => Math.min(MAX_S, Math.max(minS.current, v))
+
+  // Ein Klick direkt nach dem Hineinzoomen darf keine Wand treffen
+  const focusAt = useRef(0)
+  useEffect(() => {
+    focusAt.current = performance.now()
+  }, [focusId])
 
   const toWorld = (clientX: number, clientY: number) => {
     const rect = boxRef.current!.getBoundingClientRect()
@@ -105,7 +130,7 @@ export function SketchCanvas(props: SketchCanvasProps) {
   }
 
   // Fläche: ein Finger/Maus verschiebt die Ansicht, zwei Finger bzw. Mausrad zoomen.
-  const bindCanvas = useGesture(
+  useGesture(
     {
       onDrag: ({ delta: [dx, dy], tap, event, first, cancel, pinching }) => {
         if (pinching) return cancel()
@@ -121,7 +146,7 @@ export function SketchCanvas(props: SketchCanvasProps) {
       onPinch: ({ origin: [ox, oy], movement: [ms], first, memo }) => {
         cancelAnimationFrame(anim.current)
         const m = first || !memo ? { cam: camRef.current, at: toWorld(ox, oy), ox, oy } : memo
-        const s = clampS(m.cam.s * ms)
+        const s = clampZoom(m.cam.s * ms)
         const rect = boxRef.current!.getBoundingClientRect()
         setCam({ s, cx: m.at.x - (m.ox - rect.left - rect.width / 2) / s, cy: m.at.y - (m.oy - rect.top - rect.height / 2) / s })
         return m
@@ -132,12 +157,12 @@ export function SketchCanvas(props: SketchCanvasProps) {
         const at = toWorld(event.clientX, event.clientY)
         const rect = boxRef.current!.getBoundingClientRect()
         setCam((c) => {
-          const s = clampS(c.s * Math.exp(-dy * 0.0015))
+          const s = clampZoom(c.s * Math.exp(-dy * 0.0015))
           return { s, cx: at.x - (event.clientX - rect.left - rect.width / 2) / s, cy: at.y - (event.clientY - rect.top - rect.height / 2) / s }
         })
       },
     },
-    { drag: { filterTaps: true, pointer: { touch: true } }, pinch: { scaleBounds: { min: 0.05, max: 40 } }, wheel: { eventOptions: { passive: false } }, eventOptions: { passive: false } },
+    { target: boxRef, drag: { filterTaps: true, pointer: { touch: true } }, eventOptions: { passive: false } },
   )
 
   const s = cam.s
@@ -149,10 +174,11 @@ export function SketchCanvas(props: SketchCanvasProps) {
   const dim = (id: string) => (focusId && id !== focusId ? 0.3 : 1)
 
   // Neue Öffnung als Vorschau im fokussierten Raum
-  const withDraft = (room: Room): Room => (draftOpening && room.id === focusId ? { ...room, openings: [...room.openings, draftOpening] } : room)
+  const withDraft = (room: Room): Room =>
+    draftOpening && room.id === focusId ? { ...room, openings: [...room.openings.filter((o) => o.id !== draftOpening.id), draftOpening] } : room
 
   return (
-    <div ref={boxRef} className={className} style={{ touchAction: 'none' }} {...bindCanvas()}>
+    <div ref={boxRef} className={className} style={{ touchAction: 'none' }}>
       <svg viewBox={vb} className="block size-full select-none" fontFamily="inherit">
         <defs>
           <pattern id="grid" width={1000} height={1000} patternUnits="userSpaceOnUse">
@@ -176,6 +202,10 @@ export function SketchCanvas(props: SketchCanvasProps) {
             tolMm={25 / s}
             onMoveStart={onMoveStart}
             onMove={onMove}
+            onMoveEnd={() => {
+              afterDrag.current = true
+              setDragEnd((n) => n + 1)
+            }}
             onTap={onTapRoom}
           />
         ))}
@@ -199,13 +229,17 @@ export function SketchCanvas(props: SketchCanvasProps) {
           .filter((p) => p.r.id !== focusId)
           .map(({ r, d }) => {
             const c = centroid(d.polygon)
+            // Name an die Raumbreite anpassen, in winzigen Räumen weglassen
+            const ls = Math.min(fs, (d.w * 0.85) / (r.name.length * 0.58), d.h * 0.4)
+            if (ls < fs * 0.6) return null
+            const showArea = d.measured && d.h > ls * 4
             return (
               <g key={`l-${r.id}`} opacity={dim(r.id)} pointerEvents="none">
-                <text x={c.x} y={c.y} textAnchor="middle" dominantBaseline="central" fontSize={fs} fontWeight={600} fill={d.measured ? C.line : C.muted}>
+                <text x={c.x} y={c.y} textAnchor="middle" dominantBaseline="central" fontSize={ls} fontWeight={600} fill={d.measured ? C.line : C.muted}>
                   {r.name}
                 </text>
-                {d.measured && (
-                  <text x={c.x} y={c.y + fs * 1.2} textAnchor="middle" dominantBaseline="central" fontSize={fs * 0.85} fill={C.muted}>
+                {showArea && (
+                  <text x={c.x} y={c.y + ls * 1.2} textAnchor="middle" dominantBaseline="central" fontSize={ls * 0.85} fill={C.muted}>
                     {sqm(area(d.polygon))}
                   </text>
                 )}
@@ -224,9 +258,34 @@ export function SketchCanvas(props: SketchCanvasProps) {
             })}
             {focus.d.polygon.map((_, i) => (
               <g key={i} data-wall="">
-                <WallMark room={focus.room} i={i} status={focus.d.status[i]} active={i === activeWall} onClick={() => onTapWall?.(i)} />
+                <WallMark
+                  room={focus.room}
+                  i={i}
+                  status="measured"
+                  active={i === activeWall}
+                  onClick={() => performance.now() - focusAt.current > 450 && onTapWall?.(i)}
+                />
               </g>
             ))}
+            {/* Türen/Fenster antippbar */}
+            {!draftOpening &&
+              focus.room.openings.map((o) => {
+                const e = edges(focus.room.polygon)[o.wall]
+                if (!e) return null
+                const p0 = add(e.a, mul(e.dir, o.offset))
+                const p1 = add(p0, mul(e.dir, o.width))
+                const hit = [add(p0, mul(e.inward, fs * 1.2)), add(p1, mul(e.inward, fs * 1.2)), add(p1, mul(e.outward, t + fs)), add(p0, mul(e.outward, t + fs))]
+                return (
+                  <path
+                    key={o.id}
+                    data-wall=""
+                    d={toPath(hit)}
+                    fill="transparent"
+                    className="cursor-pointer"
+                    onClick={() => performance.now() - focusAt.current > 450 && onTapOpening?.(o.id)}
+                  />
+                )
+              })}
             {draftOpening && <OpeningDims room={focus.room} o={draftOpening} fs={fs} />}
           </g>
         )}
@@ -243,6 +302,7 @@ function OpeningDims({ room, o, fs }: { room: Room; o: Opening; fs: number }) {
   const p1 = add(p0, mul(e.dir, o.width))
   return (
     <g>
+      <circle cx={e.a.x} cy={e.a.y} r={fs * 0.4} fill={C.primary} />
       {o.offset > 0 && <Dim a={e.a} b={p0} dir={e.dir} inward={e.inward} fs={fs} label={cm(o.offset)} status="measured" active={false} level={2.4} />}
       <Dim a={p0} b={p1} dir={e.dir} inward={e.inward} fs={fs} label={cm(o.width)} status="measured" active level={2.4} />
     </g>
@@ -261,6 +321,7 @@ function RoomFloor({
   tolMm,
   onMoveStart,
   onMove,
+  onMoveEnd,
   onTap,
 }: {
   id: string
@@ -274,10 +335,11 @@ function RoomFloor({
   tolMm: number
   onMoveStart?: (id: string) => void
   onMove?: (id: string, x: number, y: number, tolMm: number) => void
+  onMoveEnd?: () => void
   onTap?: (id: string) => void
 }) {
   const bind = useDrag(
-    ({ xy: [x, y], tap, first, memo, event, pinching, cancel }) => {
+    ({ xy: [x, y], tap, first, last, memo, event, pinching, cancel }) => {
       event.stopPropagation()
       if (pinching) return cancel()
       if (tap) {
@@ -289,6 +351,7 @@ function RoomFloor({
       if (first || !memo) return { dx: origin.x - p.x, dy: origin.y - p.y, started: false }
       if (!memo.started) onMoveStart?.(id)
       onMove?.(id, p.x + memo.dx, p.y + memo.dy, tolMm)
+      if (last) onMoveEnd?.()
       return { ...memo, started: true }
     },
     { filterTaps: true, pointer: { touch: true } },

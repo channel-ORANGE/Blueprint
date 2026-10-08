@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import type { Opening } from '@/components/plan'
-import { box, defaultSize, derive, WALL_THICKNESS, wallCount, type Shape, type SketchRoom } from './rooms'
+import { box, defaultSize, derive, rects, WALL_THICKNESS, wallCount, type Shape, type SketchRoom } from './rooms'
 import { collisions, placeNew, pushNeighbors, snap } from './snap'
 
 type Project = { name: string; rooms: SketchRoom[] }
@@ -87,6 +87,8 @@ export function useProject() {
   }
 
   const addOpening = (id: string, o: Omit<Opening, 'id'>) => commit(updateRoom(id, (r) => ({ ...r, openings: [...r.openings, { ...o, id: uid() }] }))(project))
+  const updateOpening = (id: string, o: Opening) => commit(updateRoom(id, (r) => ({ ...r, openings: r.openings.map((x) => (x.id === o.id ? o : x)) }))(project))
+  const removeOpening = (id: string, openingId: string) => commit(updateRoom(id, (r) => ({ ...r, openings: r.openings.filter((x) => x.id !== openingId) }))(project))
   const renameRoom = (id: string, name: string) => commit(updateRoom(id, (r) => ({ ...r, name: name.trim() || r.name }))(project))
   const removeRoom = (id: string) => commit({ ...project, rooms: project.rooms.filter((r) => r.id !== id) })
   const setShape = (id: string, shape: Shape) =>
@@ -111,12 +113,14 @@ export function useProject() {
   return {
     name: project.name,
     rooms: project.rooms,
-    conflicts: collisions(project.rooms.map(box), WALL_THICKNESS),
+    conflicts: collisions(project.rooms.flatMap(rects), WALL_THICKNESS),
     snapshot,
     addRoom,
     moveRoom,
     setLength,
     addOpening,
+    updateOpening,
+    removeOpening,
     renameRoom,
     removeRoom,
     setShape,

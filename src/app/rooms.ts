@@ -120,6 +120,24 @@ export function toPlanRoom(r: SketchRoom, d = derive(r)): Room {
   return { id: r.id, name: r.name, polygon: d.polygon, openings: r.openings, wallStatus: d.status }
 }
 
+/** Wandbezeichnung, wie man sie vor Ort sieht (Plan: oben = Norden der Skizze). */
+export function wallName(shape: Shape, i: number) {
+  const rect = ['oben', 'rechts', 'unten', 'links']
+  const l = ['oben', 'rechts', 'Ecke waagrecht', 'Ecke senkrecht', 'unten', 'links']
+  return `Wand ${(shape === 'rect' ? rect : l)[i]}`
+}
+
+/** Raum als Rechtecke (L-Form = 2 Rechtecke) – für die Überlappungsprüfung. */
+export function rects(r: SketchRoom) {
+  const d = derive(r)
+  if (r.shape === 'rect') return [{ id: r.id, x: r.x, y: r.y, w: d.w, h: d.h }]
+  const [W, right, nw, nh] = d.wallLengths
+  return [
+    { id: r.id, x: r.x, y: r.y, w: W, h: right },
+    { id: r.id, x: r.x, y: r.y + right, w: W - nw, h: nh },
+  ]
+}
+
 export const box = (r: SketchRoom) => {
   const d = derive(r)
   return { id: r.id, x: r.x, y: r.y, w: d.w, h: d.h }

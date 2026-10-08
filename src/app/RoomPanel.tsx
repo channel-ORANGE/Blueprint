@@ -1,4 +1,4 @@
-import { AppWindow, ChevronRight, DoorOpen, X } from 'lucide-react'
+import { AppWindow, ChevronRight, DoorOpen, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { Pictogram, type Opening, type OpeningKind } from '@/components/plan'
@@ -6,24 +6,44 @@ import { Button } from '@/components/ui/button'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from '@/components/ui/input-group'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { cm, parseLength } from '@/lib/format'
+import { cm, meters, parseLength } from '@/lib/format'
 import type { derive } from './rooms'
 
 type Derived = ReturnType<typeof derive>
 
 const toText = (mm: number | null | undefined) => (mm == null ? '' : cm(mm))
 
-/** Prüft eine Eingabe – Rückgabe: Maß in mm oder ein kurzer Hinweis, wenn etwas nicht stimmt. */
-function check(text: string): { mm: number | null; warn?: string } {
-  if (!text.trim()) return { mm: null }
-  const mm = parseLength(text)
+type Check = { mm: number | null; warn?: string; suggest?: number }
+
+/** Prüft eine Eingabe: Maß in mm, oder ein kurzer Hinweis samt Vorschlag, wenn etwas nicht stimmt. */
+function check(text: string): Check {
+  const t = text.trim()
+  if (!t || /[.,+]$/.test(t)) return { mm: null } // leer oder noch beim Tippen
+  const mm = parseLength(t)
   if (mm === null) return { mm: null, warn: 'Keine gültige Zahl' }
-  if (mm < 300) return { mm: null, warn: 'Sehr kurz – Meter statt Zentimeter?' }
-  if (mm > 15000) return { mm: null, warn: 'Sehr lang – Millimeter statt Zentimeter?' }
+  const plain = /^\d+([.,]\d+)?$/.test(t)
+  if (mm < 300) return plain && mm * 100 <= 15000 ? { mm: null, warn: `Meinst du ${meters(mm * 100)}?`, suggest: mm * 100 } : { mm: null, warn: 'Sehr kurz' }
+  if (mm > 15000) return plain && mm / 10 >= 300 ? { mm: null, warn: `Meinst du ${meters(mm / 10)}?`, suggest: mm / 10 } : { mm: null, warn: 'Sehr lang' }
   return { mm }
 }
 
-function LengthInput({ id, label, value, placeholder, autoFocus, onChange }: { id: string; label: string; value: string; placeholder?: string; autoFocus?: boolean; onChange: (v: string) => void }) {
+function LengthInput({
+  id,
+  label,
+  value,
+  placeholder,
+  autoFocus,
+  onChange,
+  onEnter,
+}: {
+  id: string
+  label: string
+  value: string
+  placeholder?: string
+  autoFocus?: boolean
+  onChange: (v: string) => void
+  onEnter?: () => void
+}) {
   return (
     <Field className="min-w-0 flex-1">
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
@@ -32,10 +52,12 @@ function LengthInput({ id, label, value, placeholder, autoFocus, onChange }: { i
           id={id}
           inputMode="decimal"
           autoComplete="off"
+          enterKeyHint="next"
           autoFocus={autoFocus}
           value={value}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && onEnter?.()}
           className="text-xl font-semibold tabular-nums"
         />
         <InputGroupAddon align="inline-end">
@@ -46,55 +68,85 @@ function LengthInput({ id, label, value, placeholder, autoFocus, onChange }: { i
   )
 }
 
+/** Hinweis mit optionaler Ein-Tipp-Korrektur */
+function Warning({ text, actions }: { text: string; actions?: { label: string; onClick: () => void }[] }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <span className="text-destructive">{text}</span>
+      {actions?.map((a) => (
+        <Button key={a.label} variant="outline" size="xs" onClick={a.onClick}>
+          {a.label}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
 const panelClass =
   'flex shrink-0 flex-col gap-3 border-t bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:absolute md:right-4 md:bottom-4 md:w-96 md:rounded-xl md:border md:shadow-lg'
 
 /** Wandmaß eingeben; Tür/Fenster an dieser Wand hinzufügen. */
 export function WallPanel({
-  wall,
+  label,
   value,
+  entered,
+  wall,
   derived,
+  wallLabel,
   onChange,
+  onResolve,
   onNext,
   onAddOpening,
 }: {
-  wall: number
+  label: string
   value: number | null
+  /** Alle eingegebenen Wandlängen des Raums */
+  entered: (number | null)[]
+  wall: number
   derived: Derived
+  wallLabel: (i: number) => string
   onChange: (mm: number | null) => void
+  /** Widerspruch gegenüberliegender Wände auflösen: beide auf diesen Wert */
+  onResolve: (walls: [number, number], mm: number) => void
   onNext: () => void
   onAddOpening: (kind: OpeningKind) => void
 }) {
   const [text, setText] = useState(toText(value))
-  const { warn } = check(text)
+  const c = check(text)
   const nextOpen = derived.status.some((s, i) => s === 'open' && i !== wall)
   const conflict = derived.conflict
+  const apply = (v: string) => {
+    setText(v)
+    const r = check(v)
+    if (!r.warn && !/[.,+]$/.test(v.trim())) onChange(r.mm)
+  }
 
   return (
     <div className={panelClass}>
       <div className="flex items-end gap-2">
         <LengthInput
           id="wall-length"
-          label={`Wand ${wall + 1}`}
+          label={label}
           value={text}
           autoFocus
           placeholder={derived.status[wall] === 'computed' ? cm(derived.wallLengths[wall]) : undefined}
-          onChange={(v) => {
-            setText(v)
-            const r = check(v)
-            if (!r.warn) onChange(r.mm)
-          }}
+          onChange={apply}
+          onEnter={() => !c.warn && onNext()}
         />
-        <Button size="lg" className="h-12" onClick={onNext} disabled={!!warn}>
+        <Button size="lg" className="h-12" onClick={onNext} disabled={!!c.warn}>
           {nextOpen ? 'Weiter' : 'Fertig'}
           <ChevronRight />
         </Button>
       </div>
-      {warn && <p className="text-sm text-destructive">{warn}</p>}
-      {!warn && conflict && (
-        <p className="text-sm text-[color-mix(in_oklab,var(--fit-tight)_65%,black)]">
-          Wand {conflict[0] + 1} und {conflict[1] + 1}: {cm(conflict[2])} cm Unterschied
-        </p>
+      {c.warn && <Warning text={c.warn} actions={c.suggest ? [{ label: 'Übernehmen', onClick: () => apply(cm(c.suggest!)) }] : undefined} />}
+      {!c.warn && conflict && (
+        <Warning
+          text={`${wallLabel(conflict[0])} und ${wallLabel(conflict[1]).replace('Wand ', '')} weichen ${cm(conflict[2])} cm ab`}
+          actions={[conflict[0], conflict[1]].map((i) => ({
+            label: `${cm(entered[i]!)} cm`,
+            onClick: () => onResolve([conflict[0], conflict[1]], entered[i]!),
+          }))}
+        />
       )}
       <div className="grid grid-cols-2 gap-2">
         <Button variant="outline" onClick={() => onAddOpening('door')}>
@@ -115,27 +167,35 @@ const doorVariants = [
   { hinge: 'end', swing: 'out', label: 'Anschlag rechts, nach außen' },
 ] as const
 
-/** Neue Tür oder neues Fenster – der Plan zeigt die Vorschau samt Maßkette live. */
+/** Tür oder Fenster anlegen bzw. bearbeiten – der Plan zeigt die Vorschau samt Maßkette live. */
 export function OpeningPanel({
   kind,
-  wall,
+  wallLabel,
   wallLength,
+  wall,
+  initial,
   onDraft,
   onCancel,
-  onAdd,
+  onSave,
+  onRemove,
 }: {
   kind: OpeningKind
-  wall: number
+  wallLabel: string
   wallLength: number
+  wall: number
+  /** Vorhandene Öffnung bearbeiten */
+  initial?: Opening
   onDraft: (o: Opening | undefined) => void
   onCancel: () => void
-  onAdd: (o: Omit<Opening, 'id'>) => void
+  onSave: (o: Omit<Opening, 'id'>) => void
+  onRemove?: () => void
 }) {
   const defaultWidth = kind === 'door' ? 885 : 1200
   const defaultOffset = Math.max(0, Math.round((wallLength - defaultWidth) / 2 / 50) * 50)
-  const [offset, setOffset] = useState(toText(defaultOffset))
-  const [width, setWidth] = useState(toText(defaultWidth))
-  const [variant, setVariant] = useState('0')
+  const [offset, setOffset] = useState(toText(initial?.offset ?? defaultOffset))
+  const [width, setWidth] = useState(toText(initial?.width ?? defaultWidth))
+  const initialVariant = initial ? doorVariants.findIndex((d) => d.hinge === initial.hinge && d.swing === initial.swing) : 0
+  const [variant, setVariant] = useState(String(Math.max(0, initialVariant)))
 
   const offMm = parseLength(offset)
   const wid = check(width)
@@ -148,41 +208,50 @@ export function OpeningPanel({
   // Vorschau an die Zeichnung melden
   const draftKey = opening ? `${opening.offset}-${opening.width}-${variant}` : ''
   useEffect(() => {
-    onDraft(opening ? { ...opening, id: 'draft' } : undefined)
+    onDraft(opening ? { ...opening, id: initial?.id ?? 'draft' } : undefined)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey])
   useEffect(() => () => onDraft(undefined), [onDraft])
 
   const warn =
-    offMm === null && offset.trim() ? 'Keine gültige Zahl' : (wid.warn ?? (opening && !fits ? `Passt nicht in die Wand (${cm(wallLength)} cm)` : undefined))
+    offMm === null && offset.trim() && !/[.,+]$/.test(offset.trim())
+      ? 'Keine gültige Zahl'
+      : (wid.warn ?? (opening && !fits ? `Passt nicht in die Wand (${cm(wallLength)} cm)` : undefined))
 
   return (
     <div className={panelClass}>
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">
-          {kind === 'door' ? 'Tür' : 'Fenster'} · Wand {wall + 1}
+          {kind === 'door' ? 'Tür' : 'Fenster'} · {wallLabel}
         </h2>
         <Button variant="ghost" size="icon-sm" aria-label="Abbrechen" onClick={onCancel}>
           <X />
         </Button>
       </div>
       <div className="flex gap-2">
-        <LengthInput id="opening-offset" label="Abstand" value={offset} autoFocus onChange={setOffset} />
-        <LengthInput id="opening-width" label="Breite" value={width} onChange={setWidth} />
+        <LengthInput id="opening-offset" label="Abstand zur Ecke" value={offset} autoFocus={!initial} onChange={setOffset} />
+        <LengthInput id="opening-width" label="Breite" value={width} onChange={setWidth} onEnter={() => opening && fits && onSave(opening)} />
       </div>
       {kind === 'door' && (
         <ToggleGroup type="single" variant="outline" value={variant} onValueChange={(v) => v && setVariant(v)} className="w-full">
           {doorVariants.map((d, i) => (
-            <ToggleGroupItem key={d.label} value={String(i)} aria-label={d.label} className="h-14 flex-1 p-1">
-              <Pictogram variant="door" hinge={d.hinge} swing={d.swing} className="size-12" />
+            <ToggleGroupItem key={d.label} value={String(i)} aria-label={d.label} className="h-16 flex-1 p-1">
+              <Pictogram variant="door" hinge={d.hinge} swing={d.swing} className="size-14" />
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
       )}
-      {warn && <p className="text-sm text-destructive">{warn}</p>}
-      <Button size="lg" className="h-11" disabled={!opening || !fits} onClick={() => opening && onAdd(opening)}>
-        Hinzufügen
-      </Button>
+      {warn && <Warning text={warn} />}
+      <div className="flex gap-2">
+        {onRemove && (
+          <Button variant="outline" size="lg" className="h-11 text-destructive" aria-label="Löschen" onClick={onRemove}>
+            <Trash2 />
+          </Button>
+        )}
+        <Button size="lg" className="h-11 flex-1" disabled={!opening || !fits} onClick={() => opening && onSave(opening)}>
+          {initial ? 'Speichern' : 'Hinzufügen'}
+        </Button>
+      </div>
     </div>
   )
 }

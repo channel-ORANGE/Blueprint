@@ -1,5 +1,5 @@
-import { ChevronLeft, MoreHorizontal, Plus, Undo2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { ChevronLeft, Fullscreen, MoreHorizontal, Plus, Undo2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { Pictogram, type Opening, type OpeningKind } from '@/components/plan'
@@ -8,38 +8,45 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { NameDialog } from './AddRoomDialog'
 import { ResponsiveDialog, useIsDesktop } from './ResponsiveDialog'
 import { OpeningPanel, WallPanel } from './RoomPanel'
-import { derive, type Shape } from './rooms'
+import { derive, wallName, type Shape } from './rooms'
 import { useProject } from './useProject'
 
 type Dialog = 'add' | 'rename-room' | 'rename-project' | 'shape' | null
+type OpeningEdit = { kind: OpeningKind; initial?: Opening }
 
 export default function App() {
   const p = useProject()
+  const latest = useRef(p)
+  latest.current = p
   const desktop = useIsDesktop()
   const [focusId, setFocusId] = useState<string>()
   const [wall, setWall] = useState(0)
-  const [openingKind, setOpeningKind] = useState<OpeningKind>()
+  const [opening, setOpening] = useState<OpeningEdit>()
   const [draft, setDraft] = useState<Opening>()
   const [dialog, setDialog] = useState<Dialog>(null)
+  const [fitToken, setFitToken] = useState(0)
+  // Undo-Schritt erst bei der ersten Maßänderung im Raum, nicht schon beim Öffnen
+  const changedInRoom = useRef(false)
 
   const focus = p.rooms.find((r) => r.id === focusId)
   const focusDerived = focus && derive(focus)
+  const label = (i: number) => (focus ? wallName(focus.shape, i) : '')
 
   const openRoom = (id: string) => {
     if (id === focusId) return
-    const r = p.rooms.find((x) => x.id === id)!
-    const d = derive(r)
-    p.snapshot()
+    const d = derive(p.rooms.find((x) => x.id === id)!)
+    changedInRoom.current = false
     setFocusId(id)
-    setOpeningKind(undefined)
+    setOpening(undefined)
     setWall(Math.max(0, d.status.findIndex((s) => s === 'open')))
   }
   const closeRoom = () => {
     setFocusId(undefined)
-    setOpeningKind(undefined)
+    setOpening(undefined)
   }
   const nextWall = () => {
     if (!focusDerived) return
@@ -47,6 +54,11 @@ export default function App() {
     const next = [...Array(n).keys()].map((k) => (wall + 1 + k) % n).find((i) => focusDerived.status[i] === 'open' && i !== wall)
     if (next === undefined) closeRoom()
     else setWall(next)
+  }
+  const beforeChange = () => {
+    if (changedInRoom.current) return
+    changedInRoom.current = true
+    p.snapshot()
   }
 
   useEffect(() => {
@@ -62,42 +74,46 @@ export default function App() {
     const name = focus.name
     p.removeRoom(focus.id)
     closeRoom()
-    toast(`${name} gelöscht`, { action: { label: 'Rückgängig', onClick: p.undo } })
+    toast(`${name} gelöscht`, { action: { label: 'Rückgängig', onClick: () => latest.current.undo() } })
   }
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
       <header className="flex h-14 shrink-0 items-center gap-1 border-b px-2">
         {focus ? (
-          <Button variant="ghost" size="icon" aria-label="Zurück zur Wohnung" onClick={closeRoom}>
-            <ChevronLeft />
-          </Button>
-        ) : null}
-        <h1 className={`min-w-0 flex-1 truncate text-base font-semibold ${focus ? '' : 'pl-2'}`}>{focus ? focus.name : p.name}</h1>
+          <>
+            <Button variant="ghost" size="icon" aria-label="Zurück zur Wohnung" onClick={closeRoom}>
+              <ChevronLeft />
+            </Button>
+            <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{focus.name}</h1>
+          </>
+        ) : (
+          <div className="min-w-0 flex-1">
+            <Button variant="ghost" className="max-w-full px-2 text-base font-semibold" onClick={() => setDialog('rename-project')}>
+              <span className="truncate">{p.name}</span>
+            </Button>
+          </div>
+        )}
         <Button variant="ghost" size="icon" aria-label="Rückgängig" disabled={!p.canUndo} onClick={p.undo}>
           <Undo2 />
         </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="Mehr">
-              <MoreHorizontal />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {focus ? (
-              <>
-                <DropdownMenuItem onSelect={() => setDialog('shape')}>Form ändern</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setDialog('rename-room')}>Umbenennen</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" onSelect={removeFocused}>
-                  Löschen
-                </DropdownMenuItem>
-              </>
-            ) : (
-              <DropdownMenuItem onSelect={() => setDialog('rename-project')}>Umbenennen</DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {focus && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="Mehr">
+                <MoreHorizontal />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setDialog('shape')}>Form ändern</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setDialog('rename-room')}>Umbenennen</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onSelect={removeFocused}>
+                Löschen
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </header>
 
       <main className="relative flex min-h-0 flex-1 flex-col">
@@ -119,16 +135,23 @@ export default function App() {
           <SketchCanvas
             rooms={p.rooms}
             focusId={focusId}
-            activeWall={focus && !openingKind ? wall : undefined}
+            activeWall={focus && !opening ? wall : undefined}
             draftOpening={draft}
             conflicts={p.conflicts}
             rightInset={desktop && focusId ? 416 : 0}
+            fitToken={fitToken}
             onMoveStart={() => p.snapshot()}
             onMove={p.moveRoom}
             onTapRoom={openRoom}
             onTapWall={(i) => {
-              setOpeningKind(undefined)
+              setOpening(undefined)
               setWall(i)
+            }}
+            onTapOpening={(id) => {
+              const o = focus?.openings.find((x) => x.id === id)
+              if (!o) return
+              setWall(o.wall)
+              setOpening({ kind: o.kind, initial: o })
             }}
             onTapBackground={closeRoom}
             className="min-h-0 flex-1"
@@ -136,34 +159,72 @@ export default function App() {
         )}
 
         {!focus && p.rooms.length > 0 && (
-          <Button size="lg" className="absolute right-4 bottom-[max(1.5rem,env(safe-area-inset-bottom))] h-12 rounded-full px-5 shadow-lg" onClick={() => setDialog('add')}>
-            <Plus /> Raum
-          </Button>
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon-lg"
+                  aria-label="Alles zeigen"
+                  className="absolute bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-4 rounded-full bg-background shadow-md"
+                  onClick={() => setFitToken((n) => n + 1)}
+                >
+                  <Fullscreen />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Alles zeigen</TooltipContent>
+            </Tooltip>
+            <Button size="lg" className="absolute right-4 bottom-[max(1.5rem,env(safe-area-inset-bottom))] h-12 rounded-full px-5 shadow-lg" onClick={() => setDialog('add')}>
+              <Plus /> Raum
+            </Button>
+          </>
         )}
 
-        {focus && focusDerived && !openingKind && (
+        {focus && focusDerived && !opening && (
           <WallPanel
             key={`${focus.id}-${wall}-${focus.shape}`}
+            label={label(wall)}
             wall={wall}
             value={focus.lengths[wall]}
+            entered={focus.lengths}
             derived={focusDerived}
-            onChange={(mm) => p.setLength(focus.id, wall, mm)}
+            wallLabel={label}
+            onChange={(mm) => {
+              beforeChange()
+              p.setLength(focus.id, wall, mm)
+            }}
+            onResolve={([a, b], mm) => {
+              beforeChange()
+              p.setLength(focus.id, a, mm)
+              p.setLength(focus.id, b, mm)
+            }}
             onNext={nextWall}
-            onAddOpening={setOpeningKind}
+            onAddOpening={(kind) => setOpening({ kind })}
           />
         )}
-        {focus && focusDerived && openingKind && (
+        {focus && focusDerived && opening && (
           <OpeningPanel
-            key={`${focus.id}-${wall}-${openingKind}`}
-            kind={openingKind}
+            key={`${focus.id}-${wall}-${opening.kind}-${opening.initial?.id}`}
+            kind={opening.kind}
             wall={wall}
+            wallLabel={label(wall)}
             wallLength={focusDerived.wallLengths[wall]}
+            initial={opening.initial}
             onDraft={setDraft}
-            onCancel={() => setOpeningKind(undefined)}
-            onAdd={(o) => {
-              p.addOpening(focus.id, o)
-              setOpeningKind(undefined)
+            onCancel={() => setOpening(undefined)}
+            onSave={(o) => {
+              if (opening.initial) p.updateOpening(focus.id, { ...o, id: opening.initial.id })
+              else p.addOpening(focus.id, o)
+              setOpening(undefined)
             }}
+            onRemove={
+              opening.initial
+                ? () => {
+                    p.removeOpening(focus.id, opening.initial!.id)
+                    setOpening(undefined)
+                  }
+                : undefined
+            }
           />
         )}
       </main>
@@ -199,8 +260,9 @@ export default function App() {
           className="mb-4 w-full"
         >
           {(['rect', 'L'] as const).map((s) => (
-            <ToggleGroupItem key={s} value={s} aria-label={s === 'rect' ? 'Rechteck' : 'L-Form'} className="h-28 flex-1">
+            <ToggleGroupItem key={s} value={s} className="h-32 flex-1 flex-col gap-1">
               <Pictogram variant="shape" shape={s} className="size-20" />
+              {s === 'rect' ? 'Rechteck' : 'L-Form'}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>

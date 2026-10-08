@@ -37,11 +37,12 @@ export function collides(a: Box, b: Box, gap: number) {
   return overlap1d(a.x, a.x + a.w, b.x, b.x + b.w) > -gap + eps && overlap1d(a.y, a.y + a.h, b.y, b.y + b.h) > -gap + eps
 }
 
+/** Räume, deren Wände sich mit anderen überschneiden. Ein Raum darf aus mehreren Rechtecken bestehen (L-Form). */
 export function collisions(boxes: Box[], gap: number): Set<string> {
   const hit = new Set<string>()
   boxes.forEach((a, i) =>
     boxes.slice(i + 1).forEach((b) => {
-      if (collides(a, b, gap)) {
+      if (a.id !== b.id && collides(a, b, gap)) {
         hit.add(a.id)
         hit.add(b.id)
       }
@@ -89,10 +90,21 @@ export function pushNeighbors(boxes: Box[], id: string, dw: number, dh: number, 
   return shifts
 }
 
-/** Freier Platz für einen neuen Raum: rechts neben allem, oben bündig. */
-export function placeNew(boxes: Box[], w: number, h: number, spacing = 1000): { x: number; y: number } {
+/**
+ * Freier Platz für einen neuen Raum: rechts neben den bisherigen, oben bündig.
+ * Wird die Reihe breiter als `rowWidth`, beginnt darunter eine neue Reihe.
+ */
+export function placeNew(boxes: Box[], w: number, h: number, spacing = 1000, rowWidth = 14000): { x: number; y: number } {
   if (!boxes.length) return { x: -Math.round(w / 2), y: -Math.round(h / 2) }
+  const left = Math.min(...boxes.map((b) => b.x))
   const right = Math.max(...boxes.map((b) => b.x + b.w))
   const top = Math.min(...boxes.map((b) => b.y))
-  return { x: right + spacing, y: top }
+  const bottom = Math.max(...boxes.map((b) => b.y + b.h))
+  // Letzte Reihe = Räume, die auf Höhe des am tiefsten beginnenden Raums liegen
+  const lastRowTop = Math.max(...boxes.map((b) => b.y))
+  const row = boxes.filter((b) => b.y + b.h > lastRowTop)
+  const rowRight = Math.max(...row.map((b) => b.x + b.w))
+  const rowTop = Math.min(...row.map((b) => b.y))
+  if (rowRight + spacing + w - left > rowWidth) return { x: left, y: bottom + spacing }
+  return row.length === boxes.length ? { x: right + spacing, y: top } : { x: rowRight + spacing, y: rowTop }
 }

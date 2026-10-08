@@ -1,5 +1,5 @@
 const nf = (digits: number) =>
-  new Intl.NumberFormat('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+  new Intl.NumberFormat('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false })
 
 /** 3450 → "345" (cm, ohne Einheit) – Standard für Maßketten. */
 export const cm = (mm: number) => nf(mm % 10 === 0 ? 0 : 1).format(mm / 10)

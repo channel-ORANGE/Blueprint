@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { ResponsiveDialog } from './ResponsiveDialog'
 
-const suggestions = ['Wohnzimmer', 'Schlafzimmer', 'Kinderzimmer', 'Küche', 'Bad', 'WC', 'Flur', 'Arbeitszimmer', 'Abstellraum']
+const suggestions = ['Wohnzimmer', 'Schlafzimmer', 'Kinderzimmer', 'Küche', 'Esszimmer', 'Bad', 'WC', 'Flur', 'Arbeitszimmer', 'Abstellraum', 'Balkon']
 
 /** Raum anlegen bzw. umbenennen. Ein Vorschlag fügt den Raum direkt hinzu. */
 export function NameDialog({
@@ -26,6 +26,9 @@ export function NameDialog({
   onSubmit: (name: string) => void
 }) {
   const [name, setName] = useState(initial)
+  useEffect(() => {
+    if (open) setName(initial)
+  }, [open, initial])
   const submit = (value = name) => {
     if (!value.trim()) return
     onSubmit(value.trim())
@@ -34,10 +37,7 @@ export function NameDialog({
   return (
     <ResponsiveDialog
       open={open}
-      onOpenChange={(o) => {
-        if (o) setName(initial)
-        onOpenChange(o)
-      }}
+      onOpenChange={onOpenChange}
       title={title}
       footer={
         <Button size="lg" className="h-11" disabled={!name.trim()} onClick={() => submit()}>
