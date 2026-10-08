@@ -7,6 +7,7 @@ import { Field, FieldLabel } from '@/components/ui/field'
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from '@/components/ui/input-group'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cm, meters, parseLength } from '@/lib/format'
+import { useIsDesktop } from './ResponsiveDialog'
 import type { derive } from './rooms'
 
 type Derived = ReturnType<typeof derive>
@@ -33,11 +34,14 @@ function LengthInput({
   value,
   placeholder,
   autoFocus,
+  hideLabel,
   onChange,
   onEnter,
 }: {
   id: string
   label: string
+  /** Label nur für Screenreader (wenn der Panel-Titel es schon nennt) */
+  hideLabel?: boolean
   value: string
   placeholder?: string
   autoFocus?: boolean
@@ -46,10 +50,11 @@ function LengthInput({
 }) {
   return (
     <Field className="min-w-0 flex-1">
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      {!hideLabel && <FieldLabel htmlFor={id}>{label}</FieldLabel>}
       <InputGroup className="h-12">
         <InputGroupInput
           id={id}
+          aria-label={hideLabel ? label : undefined}
           inputMode="decimal"
           autoComplete="off"
           enterKeyHint="next"
@@ -82,8 +87,23 @@ function Warning({ text, actions }: { text: string; actions?: { label: string; o
   )
 }
 
-const panelClass =
-  'flex shrink-0 flex-col gap-3 border-t bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:absolute md:right-4 md:bottom-4 md:w-96 md:rounded-xl md:border md:shadow-lg'
+/** Gemeinsames Gerüst aller Panels: Titelzeile, Inhalt, Fußzeile mit gleich hohen Buttons (Hauptaktion rechts). */
+function Panel({ title, onClose, children, footer }: { title: string; onClose?: () => void; children: React.ReactNode; footer: React.ReactNode }) {
+  return (
+    <div className="flex shrink-0 flex-col gap-3 border-t bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:absolute md:right-4 md:bottom-4 md:w-96 md:rounded-xl md:border md:shadow-lg">
+      <div className="flex h-8 items-center justify-between gap-2">
+        <h2 className="truncate font-semibold">{title}</h2>
+        {onClose && (
+          <Button variant="ghost" size="icon-sm" aria-label="Schließen" onClick={onClose}>
+            <X />
+          </Button>
+        )}
+      </div>
+      {children}
+      <div className="flex gap-2 [&>button]:h-11">{footer}</div>
+    </div>
+  )
+}
 
 /** Wandmaß eingeben; Tür/Fenster an dieser Wand hinzufügen. */
 export function WallPanel({
@@ -111,6 +131,7 @@ export function WallPanel({
   onNext: () => void
   onAddOpening: (kind: OpeningKind) => void
 }) {
+  const desktop = useIsDesktop()
   const [text, setText] = useState(toText(value))
   const c = check(text)
   const nextOpen = derived.status.some((s, i) => s === 'open' && i !== wall)
@@ -122,22 +143,33 @@ export function WallPanel({
   }
 
   return (
-    <div className={panelClass}>
-      <div className="flex items-end gap-2">
-        <LengthInput
-          id="wall-length"
-          label={label}
-          value={text}
-          autoFocus
-          placeholder={derived.status[wall] === 'computed' ? cm(derived.wallLengths[wall]) : undefined}
-          onChange={apply}
-          onEnter={() => !c.warn && onNext()}
-        />
-        <Button size="lg" className="h-12" onClick={onNext} disabled={!!c.warn}>
-          {nextOpen ? 'Weiter' : 'Fertig'}
-          <ChevronRight />
-        </Button>
-      </div>
+    <Panel
+      title={label}
+      footer={
+        <>
+          <Button variant="outline" className="flex-1" onClick={() => onAddOpening('door')}>
+            <DoorOpen /> Tür
+          </Button>
+          <Button variant="outline" className="flex-1" onClick={() => onAddOpening('window')}>
+            <AppWindow /> Fenster
+          </Button>
+          <Button className="flex-1" onClick={onNext} disabled={!!c.warn}>
+            {nextOpen ? 'Weiter' : 'Fertig'}
+            <ChevronRight />
+          </Button>
+        </>
+      }
+    >
+      <LengthInput
+        id="wall-length"
+        label={label}
+        hideLabel
+        value={text}
+        autoFocus={desktop}
+        placeholder={derived.status[wall] === 'computed' ? cm(derived.wallLengths[wall]) : undefined}
+        onChange={apply}
+        onEnter={() => !c.warn && onNext()}
+      />
       {c.warn && <Warning text={c.warn} actions={c.suggest ? [{ label: 'Übernehmen', onClick: () => apply(cm(c.suggest!)) }] : undefined} />}
       {!c.warn && conflict && (
         <Warning
@@ -148,15 +180,7 @@ export function WallPanel({
           }))}
         />
       )}
-      <div className="grid grid-cols-2 gap-2">
-        <Button variant="outline" onClick={() => onAddOpening('door')}>
-          <DoorOpen /> Tür
-        </Button>
-        <Button variant="outline" onClick={() => onAddOpening('window')}>
-          <AppWindow /> Fenster
-        </Button>
-      </div>
-    </div>
+    </Panel>
   )
 }
 
@@ -190,6 +214,7 @@ export function OpeningPanel({
   onSave: (o: Omit<Opening, 'id'>) => void
   onRemove?: () => void
 }) {
+  const desktop = useIsDesktop()
   const defaultWidth = kind === 'door' ? 885 : 1200
   const defaultOffset = Math.max(0, Math.round((wallLength - defaultWidth) / 2 / 50) * 50)
   const [offset, setOffset] = useState(toText(initial?.offset ?? defaultOffset))
@@ -219,39 +244,36 @@ export function OpeningPanel({
       : (wid.warn ?? (opening && !fits ? `Passt nicht in die Wand (${cm(wallLength)} cm)` : undefined))
 
   return (
-    <div className={panelClass}>
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold">
-          {kind === 'door' ? 'Tür' : 'Fenster'} · {wallLabel}
-        </h2>
-        <Button variant="ghost" size="icon-sm" aria-label="Abbrechen" onClick={onCancel}>
-          <X />
-        </Button>
-      </div>
+    <Panel
+      title={`${kind === 'door' ? 'Tür' : 'Fenster'} · ${wallLabel}`}
+      onClose={onCancel}
+      footer={
+        <>
+          {onRemove && (
+            <Button variant="outline" size="icon-lg" className="text-destructive" aria-label="Löschen" onClick={onRemove}>
+              <Trash2 />
+            </Button>
+          )}
+          <Button className="flex-1" disabled={!opening || !fits} onClick={() => opening && onSave(opening)}>
+            {initial ? 'Speichern' : 'Hinzufügen'}
+          </Button>
+        </>
+      }
+    >
       <div className="flex gap-2">
-        <LengthInput id="opening-offset" label="Abstand zur Ecke" value={offset} autoFocus={!initial} onChange={setOffset} />
+        <LengthInput id="opening-offset" label="Abstand zur Ecke" value={offset} autoFocus={desktop && !initial} onChange={setOffset} />
         <LengthInput id="opening-width" label="Breite" value={width} onChange={setWidth} onEnter={() => opening && fits && onSave(opening)} />
       </div>
       {kind === 'door' && (
         <ToggleGroup type="single" variant="outline" value={variant} onValueChange={(v) => v && setVariant(v)} className="w-full">
           {doorVariants.map((d, i) => (
-            <ToggleGroupItem key={d.label} value={String(i)} aria-label={d.label} className="h-16 flex-1 p-1">
-              <Pictogram variant="door" hinge={d.hinge} swing={d.swing} className="size-14" />
+            <ToggleGroupItem key={d.label} value={String(i)} aria-label={d.label} className="h-12 flex-1 p-0.5">
+              <Pictogram variant="door" hinge={d.hinge} swing={d.swing} className="size-11" />
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
       )}
       {warn && <Warning text={warn} />}
-      <div className="flex gap-2">
-        {onRemove && (
-          <Button variant="outline" size="lg" className="h-11 text-destructive" aria-label="Löschen" onClick={onRemove}>
-            <Trash2 />
-          </Button>
-        )}
-        <Button size="lg" className="h-11 flex-1" disabled={!opening || !fits} onClick={() => opening && onSave(opening)}>
-          {initial ? 'Speichern' : 'Hinzufügen'}
-        </Button>
-      </div>
-    </div>
+    </Panel>
   )
 }

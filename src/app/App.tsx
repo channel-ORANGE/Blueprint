@@ -9,11 +9,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { NameDialog } from './AddRoomDialog'
+import { AddRoomDialog, NameDialog } from './AddRoomDialog'
 import { ResponsiveDialog, useIsDesktop } from './ResponsiveDialog'
 import { OpeningPanel, WallPanel } from './RoomPanel'
 import { derive, wallName, type Shape } from './rooms'
 import { useProject } from './useProject'
+import { useVisualViewport } from './useVisualViewport'
 
 type Dialog = 'add' | 'rename-room' | 'rename-project' | 'shape' | null
 type OpeningEdit = { kind: OpeningKind; initial?: Opening }
@@ -23,6 +24,7 @@ export default function App() {
   const latest = useRef(p)
   latest.current = p
   const desktop = useIsDesktop()
+  const vp = useVisualViewport()
   const [focusId, setFocusId] = useState<string>()
   const [wall, setWall] = useState(0)
   const [opening, setOpening] = useState<OpeningEdit>()
@@ -78,7 +80,11 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-background">
+    // Fest auf den sichtbaren Bereich gelegt: Bei offener Tastatur bleibt der Header oben, das Panel sitzt direkt darüber.
+    <div
+      className="fixed inset-x-0 flex flex-col overflow-hidden bg-background"
+      style={vp ? { top: vp.offsetTop, height: vp.height } : { top: 0, bottom: 0 }}
+    >
       <header className="flex shrink-0 items-center gap-1 border-b px-2 pt-[env(safe-area-inset-top)] [&>*]:my-2">
         {focus ? (
           <>
@@ -229,13 +235,12 @@ export default function App() {
         )}
       </main>
 
-      <NameDialog open={dialog === 'add'} onOpenChange={(o) => setDialog(o ? 'add' : null)} title="Raum hinzufügen" submitLabel="Hinzufügen" withSuggestions onSubmit={p.addRoom} />
+      <AddRoomDialog open={dialog === 'add'} onOpenChange={(o) => setDialog(o ? 'add' : null)} onAdd={p.addRoom} />
       <NameDialog
         open={dialog === 'rename-room'}
         onOpenChange={(o) => setDialog(o ? 'rename-room' : null)}
         title="Raum umbenennen"
         initial={focus?.name}
-        submitLabel="Speichern"
         onSubmit={(n) => focus && p.renameRoom(focus.id, n)}
       />
       <NameDialog
@@ -243,7 +248,6 @@ export default function App() {
         onOpenChange={(o) => setDialog(o ? 'rename-project' : null)}
         title="Wohnung umbenennen"
         initial={p.name}
-        submitLabel="Speichern"
         onSubmit={p.renameProject}
       />
       <ResponsiveDialog open={dialog === 'shape'} onOpenChange={(o) => setDialog(o ? 'shape' : null)} title="Form">

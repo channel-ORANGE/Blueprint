@@ -33,7 +33,7 @@ export function ResponsiveDialog({
   if (desktop)
     return (
       <Dialog open={open} onOpenChange={onOpenChange} modal={modal}>
-        <DialogContent className="sm:max-w-md" onInteractOutside={(e) => !modal && e.preventDefault()}>
+        <DialogContent className="sm:max-w-md" onOpenAutoFocus={(e) => e.preventDefault()} onInteractOutside={(e) => !modal && e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
           </DialogHeader>
@@ -44,7 +44,8 @@ export function ResponsiveDialog({
     )
   return (
     <Drawer open={open} onOpenChange={onOpenChange} modal={modal}>
-      <DrawerContent>
+      {/* Kein automatischer Fokus: Die Tastatur öffnet sich erst, wenn man ins Feld tippt. */}
+      <DrawerContent onOpenAutoFocus={(e) => e.preventDefault()}>
         <DrawerHeader className="text-left">
           <DrawerTitle>{title}</DrawerTitle>
         </DrawerHeader>
