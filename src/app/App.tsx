@@ -78,8 +78,8 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-background">
-      <header className="flex h-14 shrink-0 items-center gap-1 border-b px-2">
+    <div className="flex h-full flex-col overflow-hidden bg-background">
+      <header className="flex shrink-0 items-center gap-1 border-b px-2 pt-[env(safe-area-inset-top)] [&>*]:my-2">
         {focus ? (
           <>
             <Button variant="ghost" size="icon" aria-label="Zurück zur Wohnung" onClick={closeRoom}>

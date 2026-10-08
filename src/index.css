@@ -144,4 +144,13 @@
   html {
     @apply font-sans;
   }
+  /* Volle Höhe über die Elternkette statt 100dvh – stimmt auch eingebettet (Artifact-Rahmen). */
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    overscroll-behavior: none;
+  }
 }
