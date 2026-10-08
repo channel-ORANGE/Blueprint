@@ -7,7 +7,7 @@ import type { Furniture, MeasureStatus, Opening, Pt, Room, Side } from './types'
 import { cm, sqm } from '@/lib/format'
 
 // Farben kommen ausschließlich aus den Theme-Variablen (shadcn + Plan-Ergänzungen in index.css).
-const C = {
+export const C = {
   floor: 'var(--plan-floor)',
   wall: 'var(--plan-wall)',
   line: 'var(--foreground)',
@@ -20,7 +20,7 @@ const C = {
   bad: 'var(--fit-bad)',
 }
 
-const NS = { vectorEffect: 'non-scaling-stroke' } as const
+export const NS = { vectorEffect: 'non-scaling-stroke' } as const
 
 export type PlanViewProps = {
   rooms: Room[]
@@ -88,7 +88,7 @@ export function PlanView(props: PlanViewProps) {
       ref={svgRef}
       viewBox={`${b.minX - pad} ${b.minY - pad} ${b.w + 2 * pad} ${b.h + 2 * pad}`}
       preserveAspectRatio="xMidYMid meet"
-      className="block h-full w-full select-none"
+      className="block size-full select-none"
       onClick={(e) => {
         if (e.target === e.currentTarget) onSelectFurniture?.(undefined)
       }}
@@ -214,7 +214,7 @@ function openingFrame(room: Room, o: Opening) {
   return { e, p0, p1 }
 }
 
-function OpeningShape({ room, o, t, highlight }: { room: Room; o: Opening; t: number; highlight: boolean }) {
+export function OpeningShape({ room, o, t, highlight }: { room: Room; o: Opening; t: number; highlight: boolean }) {
   const { e, p0, p1 } = openingFrame(room, o)
   const eps = 4
   const cut = [add(p0, mul(e.inward, eps)), add(p1, mul(e.inward, eps)), add(p1, mul(e.outward, t + eps)), add(p0, mul(e.outward, t + eps))]
@@ -253,7 +253,7 @@ function OpeningShape({ room, o, t, highlight }: { room: Room; o: Opening; t: nu
   )
 }
 
-function DoorSwingArea({ room, o, t }: { room: Room; o: Opening; t: number }) {
+export function DoorSwingArea({ room, o, t }: { room: Room; o: Opening; t: number }) {
   const { e, p0, p1 } = openingFrame(room, o)
   const outside = o.swing === 'out'
   const shift = outside ? mul(e.outward, t) : { x: 0, y: 0 }
@@ -264,7 +264,7 @@ function DoorSwingArea({ room, o, t }: { room: Room; o: Opening; t: number }) {
   return <path d={toPath([hinge, ...arc])} fill={C.primary} fillOpacity={0.08} />
 }
 
-function WallMark({ room, i, status, active, onClick }: { room: Room; i: number; status: MeasureStatus; active: boolean; onClick?: () => void }) {
+export function WallMark({ room, i, status, active, onClick }: { room: Room; i: number; status: MeasureStatus; active: boolean; onClick?: () => void }) {
   const e = edges(room.polygon)[i]
   const showLine = active || status === 'open' || onClick
   if (!showLine) return null
@@ -290,8 +290,29 @@ function WallMark({ room, i, status, active, onClick }: { room: Room; i: number;
 
 /* ---------- Maßketten ---------- */
 
-function Dim({ a, b, dir, inward, fs, label, status, active }: { a: Pt; b: Pt; dir: Pt; inward: Pt; fs: number; label: string; status: MeasureStatus; active: boolean }) {
-  const off = fs * 1.6
+export function Dim({
+  a,
+  b,
+  dir,
+  inward,
+  fs,
+  label,
+  status,
+  active,
+  level = 1,
+}: {
+  a: Pt
+  b: Pt
+  dir: Pt
+  inward: Pt
+  fs: number
+  label: string
+  status: MeasureStatus
+  active: boolean
+  /** Abstand der Maßkette von der Wand in Zeilen (1 = Wandmaß, 2 = Öffnungsmaß) */
+  level?: number
+}) {
+  const off = fs * 1.6 * level
   const p = add(a, mul(inward, off))
   const q = add(b, mul(inward, off))
   const tick = mul(add(dir, inward), fs * 0.25)
